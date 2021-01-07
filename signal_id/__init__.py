@@ -12,3 +12,6 @@ from .example_mod import *   # noqa
 __all__ += ['do_primes']   # noqa
 # or you can keep everything from the subpackage with the following instead
 # __all__ += example_mod.__all__
+from .noise import *
+from .stacking import *
+from .masks import *
