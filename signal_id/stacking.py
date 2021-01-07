@@ -5,7 +5,7 @@ from spectral_cube import SpectralCube
 import astropy.wcs as wcs
 
 
-def channelShiftVec(x, ChanShift):
+def channel_shift(x, ChanShift):
     # Shift an array of spectra (x) by a set number of Channels (array)
     ftx = np.fft.fft(x, axis=0)
     m = np.fft.fftfreq(x.shape[0])
@@ -59,9 +59,9 @@ def shuffle_cube(DataCube, centroid_map, chunk=1000):
                                        np.array_split(channel_shift, nchunk)):
         spectrum = DataCube.filled_data[:, thisy, thisx].value
         baddata = ~np.isfinite(spectrum)
-        shifted_spectrum = channelShiftVec(np.nan_to_num(spectrum),
+        shifted_spectrum = channel_shift(np.nan_to_num(spectrum),
                                            np.atleast_1d(thisshift))
-        shifted_mask = channelShiftVec(baddata, np.atleast_1d(thisshift))
+        shifted_mask = channel_shift(baddata, np.atleast_1d(thisshift))
         shifted_spectrum[baddata > 0] = np.nan
         NewCube[:, thisy, thisx] = shifted_spectrum
     hdr = DataCube.header
@@ -97,10 +97,10 @@ def bin_by_mask(DataCube, mask, centroid_map, weight_map=None):
     relative_channel = np.arange(len(spaxis)) - (len(spaxis) // 2)
     centroids = centroid_map[y, x].to(DataCube.spectral_axis.unit).value
     sortindex = np.argsort(spaxis)
-    channel_shift = -1 * np.interp(centroids, spaxis[sortindex],
-                                   np.array(relative_channel[sortindex], dtype=np.float))
+    shift = -1 * np.interp(centroids, spaxis[sortindex],
+                           np.array(relative_channel[sortindex], dtype=np.float))
     spectra = DataCube.filled_data[:, y, x].value
-    shifted_spectra = channelShiftVec(spectra, channel_shift)
+    shifted_spectra = channel_shift(spectra, shift)
     if weight_map is not None:
         wts = weight_map[y, x]
     else:

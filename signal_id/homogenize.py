@@ -1,14 +1,12 @@
-from .masks import noise_cube, simple_mask
 from spectral_cube import SpectralCube
 from radio_beam import Beam
 from galaxies import Galaxy
 import astropy.units as u
 import numpy as np
 from astropy.io import fits
-from phangs import PhangsGalaxy
 import os
 import sys
-
+import warnings
 
 def common_cube(filename, 
                 target_rms=None,

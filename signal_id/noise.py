@@ -13,6 +13,11 @@ import astropy.units as u
 # from pipelineVersion import version as pipeVer
 from astropy.io import fits
 
+import warnings
+
+from astropy.utils.exceptions import AstropyWarning
+warnings.simplefilter('ignore', category=AstropyWarning)
+
 np.seterr(divide='ignore', invalid='ignore')
 
 mad_to_std_fac = 1.482602218505602
@@ -90,13 +95,14 @@ def mad_zero_centered(data, mask=None):
     return(mad2)
 
 
-def noise_cube(data, mask=None,
+def noise_cube(datain, mask=None,
                nThresh=30, iterations=1,
                do_map=True, do_spec=True,
                box=None, spec_box=None,
                bandpass_smooth_window=None,
                bandpass_smooth_order=3,
-               oversample_boundary=False):
+               oversample_boundary=False,
+               return_spectral_cube=False):
     """
 
     Makes an empirical estimate of the noise in a cube assuming that
@@ -157,8 +163,14 @@ def noise_cube(data, mask=None,
     
     """
 
-    # TBD: add error checking
-
+    if type(datain) is SpectralCube:
+        data = datain.filled_data[:].value
+    elif type(datain) is np.ndarray:
+        data = datain
+    else:
+        warning.warn("Input data must be ndarray or SpectralCube")
+        raise ValueError
+    
     # Create a mask that identifies voxels to be fitting the noise
 
     noisemask = np.isfinite(data)
@@ -383,120 +395,8 @@ def noise_cube(data, mask=None,
             noise_cube_out *= noise_cube
 
     # If iterating return the iterated noise cube.
-
-    return(noise_cube_out)
-
-
-def recipe_phangs_noise(
-        incube=None,
-        outfile=None,
-        mask=None,
-        noise_kwargs=None,
-        return_spectral_cube=False,
-        overwrite=False):
-    """
-
-    Wrap noise_cube with a set of preferred parameters for the
-    PHANGS-ALMA CO work.
-    
-    Parameters:
-    -----------
-    
-    cube : np.array
-
-        Array of data (floats)
-    
-    Keywords:
-    ---------
-    
-    mask : np.bool
-
-        Boolean array with False indicating where data can be used in
-        the noise estimate. (i.e., True is signal).
-
-    """
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Error checking and work out inputs
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    if type(incube) is SpectralCube:
-        cube = incube
-    elif type(incube) == str:
-        cube = SpectralCube.read(incube)
+    if return_spectral_cube and type(datain) is SpectralCube:
+        return(SpectralCube(u.Quantity(noise_cube_out, datain.unit), 
+                            datain.wcs, header=datain.header))
     else:
-        logger.error("Input must be a SpectralCube object or a filename.")
-
-    # Initialize an empty kwargs dictionary
-    if noise_kwargs is None:
-        noise_kwargs = {}
-
-    # If no box is specified, default to one about two beams across
-    if 'box' not in noise_kwargs:
-        pixels_per_beam = cube.pixels_per_beam
-        box = np.ceil(2.5 * pixels_per_beam**0.5)
-        noise_kwargs['box'] = box
-
-    # Default to an odd bandpass smothing window
-    if 'bandpass_smooth_window' not in noise_kwargs:
-        spectral_smooth = np.ceil(cube.shape[0] / 5) // 2 * 2 + 1
-        noise_kwargs['bandpass_smooth_window'] = spectral_smooth
-
-    if 'spec_box' not in noise_kwargs:
-        noise_kwargs['spec_box'] = 5
-
-    if 'iterations' not in noise_kwargs:
-        noise_kwargs['iterations'] = 4
-
-    # Require a valid cube input as a
-    if mask is not None:
-        if type(mask) is SpectralCube:
-            noise_kwargs['mask'] = mask
-        elif type(mask) == type("hello"):
-            noise_kwargs['mask'] = SpectralCube.read(mask)
-        else:
-            logger.error(
-                "Mask must be a SpectralCube object or a filename or None.")
-
-    # Fill in the mask if it hasn't already been filled in.
-    if 'mask' not in noise_kwargs:
-
-        # Check if a non-trivial signal mask is attached to the cube
-        if (np.sum(cube.mask.include())
-                < np.sum(np.isfinite(cube.filled_data[:].value))):
-            noise_kwargs['mask'] = cube.mask.include()
-        else:
-            noise_kwargs['mask'] = None
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Run the noise estimate
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    data = cube.filled_data[:].value
-    badmask = np.isnan(data)
-    badmask = nd.binary_dilation(badmask,
-                                 structure=nd.generate_binary_structure(3, 2))
-    data[badmask] = np.nan
-    rms = noise_cube(data,
-                     **noise_kwargs)
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Write or return as requested
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    # In this case can avoid a recast
-    if not return_spectral_cube and (outfile is None):
-        return(rms)
-
-    # Recast from numpy array to spectral cube
-
-    rms = SpectralCube(rms, wcs=cube.wcs, header=cube.header)
-
-    # Write to disk, if desired
-    if outfile is not None:
-        rms.write(outfile, overwrite=overwrite)
-
-    if return_spectral_cube:
-        return(rms)
-    else:
-        return(rms.filled_data[:].value)
+        return(noise_cube_out)

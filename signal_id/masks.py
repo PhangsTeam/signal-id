@@ -1,4 +1,3 @@
-import logging
 import scipy.ndimage.morphology as morph
 import scipy.ndimage as nd
 from scipy.signal import savgol_coeffs
@@ -6,21 +5,17 @@ import numpy as np
 from astropy.stats import mad_std
 from astropy.convolution import convolve, Gaussian2DKernel
 import scipy.stats as ss
-
 from spectral_cube import SpectralCube
+
 import astropy.wcs as wcs
 import astropy.units as u
-# from pipelineVersion import version as pipeVer
 from astropy.io import fits
-
-from .noise import mad_zero_centered
 from functools import reduce
+
 np.seterr(divide='ignore', invalid='ignore')
 
 mad_to_std_fac = 1.482602218505602
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 def nchan_thresh_mask(cube, thresh=5., nchan=2):
@@ -286,7 +281,7 @@ def cprops_mask(data, noise=None,
     # TBD error checking, dimensions, types, etc.
 
     if noise is None:
-        logger.warning("No noise estimate supplied. Taking noise to be unity.")
+        warnings.warn("No noise estimate supplied. Taking noise to be unity.")
         noise = 1.0
 
     # Recase the cube into a signal-to-noise cube
@@ -335,7 +330,9 @@ def cprops_mask(data, noise=None,
 
         # Now expand the original mask into the lower mask
         mask = grow_mask(hi_mask, constraint=lo_mask)
-
+    else:
+        mask = hi_mask
+        
     # If requested, grow the mask in xy and v directions. Sequential
     # calls mean that the xy is applied then the v.
 
@@ -398,7 +395,7 @@ def join_masks(orig_mask_in, new_mask_in,
     elif type(orig_mask_in) is SpectralCube:
         orig_mask = orig_mask_in
     else:
-        logging.error('Unrecognized input type for orig_mask_in')
+        warnings.warn('Unrecognized input type for orig_mask_in')
         raise NotImplementedError
 
     # Enable large operations
@@ -409,7 +406,7 @@ def join_masks(orig_mask_in, new_mask_in,
     elif type(new_mask_in) is SpectralCube:
         new_mask = new_mask_in
     else:
-        logging.error('Unrecognized input type for new_mask_in')
+        warnings.warn('Unrecognized input type for new_mask_in')
         raise NotImplementedError
 
     # Enable large operations
@@ -421,7 +418,7 @@ def join_masks(orig_mask_in, new_mask_in,
 
     if order == 'fast_nearest_neighbor':
 
-        logger.warn('Joining masks with nearest neighbor coordinate lookup')
+        warnings.warn('Joining masks with nearest neighbor coordinate lookup')
         # Grab WCS out of template mask and map to other mask
         x, y, _ = new_mask.wcs.wcs_world2pix(
             *(orig_mask.world[0, :, :][::-1]), 0)
@@ -453,7 +450,7 @@ def join_masks(orig_mask_in, new_mask_in,
 
     else:
 
-        logger.warn('Joining masks with reprojection')
+        warnings.warn('Joining masks with reprojection')
         new_mask = new_mask.reproject(orig_mask.header, order=order)
         new_mask = new_mask.spectral_interpolate(orig_mask.spectral_axis)
         new_mask_vals = np.array(new_mask.filled_data[:].value > thresh,
@@ -474,7 +471,7 @@ def join_masks(orig_mask_in, new_mask_in,
     elif operation.strip().lower() == 'sum':
         mask = (orig_mask.filled_data[:].value) + new_mask_vals
     else:
-        logging.error('Unrecognized operation. Not "and" or "or".')
+        warnings.warn('Unrecognized operation. Not "and" or "or".')
         raise NotImplementedError
 
     # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
@@ -490,293 +487,6 @@ def join_masks(orig_mask_in, new_mask_in,
         hdu = fits.PrimaryHDU(np.array(mask.filled_data[:], dtype=np.uint8),
                               header=mask.header)
         hdu.writeto(outfile, overwrite=overwrite)
-        # mask.write(outfile, overwrite=overwrite)
 
     return(mask)
 
-
-def recipe_phangs_strict_mask(
-        incube, innoise, outfile=None,
-        coverage=None, coverage_thresh=0.95,
-        mask_kwargs=None,
-        return_spectral_cube=False,
-        overwrite=False):
-    """
-    Task to create the PHANGS-style "strict" masks.
-
-    Parameters:
-
-    -----------
-
-    cube : string or SpectralCube
-        The cube to be masked.
-
-    noise : string or SpectralCube
-        The noise estimate.
-
-    Keywords:
-    ---------
-
-    outfile : string
-        Filename where the mask will be written. The mask is also
-        returned.
-
-    masks_kwargs : dictionary
-        Parameters to be passed to the cprops masking routine.
-
-    """
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Error checking and work out inputs
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    # TBD error checking, dimensions, types, etc.
-
-    if type(incube) is SpectralCube:
-        cube = incube
-    elif type(incube) == type("hello"):
-        cube = SpectralCube.read(incube)
-    else:
-        logger.error("Input cube must be a SpectralCube object or a filename.")
-
-    cube.allow_huge_operations = True
-
-    if type(innoise) is SpectralCube:
-        rms = innoise
-    elif type(innoise) == type("hello"):
-        rms = SpectralCube.read(innoise)
-    else:
-        logger.error(
-            "Input noise must be a SpectralCube object or a filename.")
-
-    rms.allow_huge_operations = True
-
-    if coverage is not None:
-        if type(coverage) is SpectralCube:
-            coverage_cube = coverage
-        elif type(coverage) == type("hello"):
-            coverage_cube = SpectralCube.read(coverage)
-        else:
-            logger.error(
-                "Coverage cube must be a SpectralCube object or a filename or None.")
-
-        coverage_cube.allow_huge_operations = True
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Set up the masking kwargs
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    # Initialize an empty kwargs dictionary
-    if mask_kwargs is None:
-        mask_kwargs = {}
-
-    # Fill in strict mask defaults
-    if 'hi_thresh' not in mask_kwargs:
-        mask_kwargs['hi_thresh'] = 4.0
-
-    if 'hi_nchan' not in mask_kwargs:
-        mask_kwargs['hi_nchan'] = 2
-
-    if 'lo_thresh' not in mask_kwargs:
-        mask_kwargs['lo_thresh'] = 2.0
-
-    if 'lo_nchan' not in mask_kwargs:
-        mask_kwargs['lo_nchan'] = 2
-
-    if 'min_pix' not in mask_kwargs:
-        mask_kwargs['min_pix'] = None
-
-    if 'min_area' not in mask_kwargs:
-        mask_kwargs['min_area'] = None
-
-    if 'grow_xy' not in mask_kwargs:
-        mask_kwargs['grow_xy'] = 0
-
-    if 'grow_v' not in mask_kwargs:
-        mask_kwargs['grow_v'] = 0
-
-    if 'min_beams' in mask_kwargs:
-        apix = wcs.utils.proj_plane_pixel_area(cube.wcs) * u.deg**2
-        ppbeam = (np.pi
-                  * cube.beam.major
-                  * cube.beam.minor
-                  / (4 * np.log(2)) / apix)
-        ppbeam = ppbeam.to(u.dimensionless_unscaled).value
-        mask_kwargs['ppbeam'] = ppbeam
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Create the mask
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    prior_hi = None
-    if coverage is not None:
-
-        prior_hi = coverage_cube.filled_data[:].value > coverage_thresh
-
-    mask = cprops_mask(cube.filled_data[:].value,
-                       rms.filled_data[:].value,
-                       prior_hi=prior_hi,
-                       **mask_kwargs)
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Write to disk and return
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    # In this case can avoid a recast
-    if not return_spectral_cube and (outfile is None):
-        return(mask)
-
-    # Recast from numpy array to spectral cube
-    mask = SpectralCube(mask*1.0, wcs=cube.wcs, header=cube.header,
-                        meta={'BUNIT': ' ', 'BTYPE': 'Mask'})
-
-    # Write to disk, if desired
-    if outfile is not None:
-        hdu = fits.PrimaryHDU(np.array(mask.filled_data[:], dtype=np.uint8),
-                              header=mask.header)
-        hdu.writeto(outfile, overwrite=overwrite)
-        # mask.write(outfile, overwrite=overwrite)
-
-    if return_spectral_cube:
-        return(mask)
-    else:
-        return(mask.filled_data[:].value)
-
-
-def recipe_phangs_broad_mask(
-        template_mask, outfile=None, list_of_masks=[],
-        grow_xy=None, grow_v=None,
-        return_spectral_cube=True, overwrite=False,
-        recipe='anyscale', fraction_of_scales=0.25,
-):
-    """Task to create the PHANGS-style "broad" masks from the combination
-    of a set of other masks. Optionally also grow the mask at the end.
-
-    Parameters:
-
-    -----------
-
-    template_mask : string or SpectralCube
-
-        The original mask that holds the target WCS. The other masks
-        will be reprojected onto this one. This mask is included in
-        the final output.
-
-    Keywords:
-    ---------
-
-    outfile : string
-
-        Filename where the mask will be written. The mask is also
-        returned.
-
-    list_of_masks : list
-
-        List of masks or spectral cubes. These will be reprojected
-        onto the template mask and then combined via logical or to
-        form the final mask.
-
-    grow_xy : int    
-        
-        Number of spatial dilations of the mask.
-
-    grow_v : int
-
-        Number of spectralwise dilations of the mask.
-
-    recipe : str
-
-        If 'anyscale', the broad mask include pixels that are included
-        in any of the contributing masks.  If 'somescales', this only
-        include pixels that are in fraction_of_scales masks of the
-        origina list.
-
-    fraction_of_scales : float
-
-        Set to the fraction of scales that is the minimum for
-        inclusion in the broadmask.
-
-    """
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Error checking and work out inputs
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    # TBD error checking, dimensions, types, etc.
-
-    if type(template_mask) is SpectralCube:
-        mask = template_mask
-    elif type(template_mask) == str:
-        mask = SpectralCube.read(template_mask)
-    else:
-        logger.error("Input mask must be a SpectralCube object or a filename.")
-        return(None)
-
-    mask.allow_huge_operations = True
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Loop over other masks
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    for other_mask in list_of_masks:
-
-        if type(other_mask) is SpectralCube:
-            other_mask = other_mask
-        elif type(template_mask) == type("hello"):
-            other_mask = SpectralCube.read(other_mask)
-        else:
-            logger.error(
-                "Input masks must be SpectralCube objects or filenames.")
-            return(None)
-
-        other_mask.allow_huge_operations = True
-
-        mask = join_masks(mask, other_mask, operation='sum',
-                          order='fast_nearest_neighbor')
-
-    if recipe is 'anyscale':
-        mask_values = mask.filled_data[:].value > 0
-        mask = SpectralCube(mask_values*1.0, wcs=mask.wcs,
-                            header=mask.header, meta={'BUNIT': ' ', 'BTYPE': 'Mask'})
-        mask.allow_huge_operations = True
-
-    if recipe is 'somescales':
-        mask_values = mask.filled_data[:].value > (fraction_of_scales
-                                                   * len(list_of_masks))
-        mask = SpectralCube(mask_values*1.0, wcs=mask.wcs,
-                            header=mask.header, meta={'BUNIT': ' ', 'BTYPE': 'Mask'})
-        mask.allow_huge_operations = True
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Grow the mask
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    if (grow_xy is not None) or (grow_v is not None):
-
-        mask_values = mask.filled_data[:].value
-        if grow_xy is not None:
-            mask_values = grow_mask(mask_values, iters_xy=grow_xy)
-        if grow_v is not None:
-            mask_values = grow_mask(mask_values, iters_v=grow_v)
-
-        mask = SpectralCube(mask_values*1.0, wcs=mask.wcs,
-                            header=mask.header, meta={'BUNIT': ' ', 'BTYPE': 'Mask'})
-
-        mask.allow_huge_operations = True
-
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-    # Write to disk and return
-    # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
-
-    # Write to disk, if desired
-    if outfile is not None:
-        hdu = fits.PrimaryHDU(np.array(mask.filled_data[:], dtype=np.uint8),
-                              header=mask.header)
-        hdu.writeto(outfile, overwrite=overwrite)
-
-        # mask.write(outfile, overwrite=overwrite)
-
-    if return_spectral_cube:
-        return(mask)
-    else:
-        return(mask.filled_data[:].value)
