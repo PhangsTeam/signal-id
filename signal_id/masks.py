@@ -13,7 +13,7 @@ import astropy.units as u
 # from pipelineVersion import version as pipeVer
 from astropy.io import fits
 
-from scNoiseRoutines import mad_zero_centered
+from .noise import mad_zero_centered
 from functools import reduce
 np.seterr(divide='ignore', invalid='ignore')
 
