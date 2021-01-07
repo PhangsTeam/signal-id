@@ -49,14 +49,14 @@ def shuffle_cube(DataCube, centroid_map, chunk=1000):
     relative_channel = np.arange(len(spaxis)) - (len(spaxis) // 2)
     centroids = centroid_map[y, x]
     sortindex = np.argsort(spaxis)
-    channel_shift = -1 * np.interp(centroids, spaxis[sortindex],
-                                   np.array(relative_channel[sortindex], dtype=np.float))
+    shift = -1 * np.interp(centroids, spaxis[sortindex],
+                           np.array(relative_channel[sortindex], dtype=np.float))
     NewCube = np.empty(DataCube.shape)
     NewCube.fill(np.nan)
     nchunk = (len(x) // chunk)
     for thisx, thisy, thisshift in zip(np.array_split(x, nchunk),
                                        np.array_split(y, nchunk),
-                                       np.array_split(channel_shift, nchunk)):
+                                       np.array_split(shift, nchunk)):
         spectrum = DataCube.filled_data[:, thisy, thisx].value
         baddata = ~np.isfinite(spectrum)
         shifted_spectrum = channel_shift(np.nan_to_num(spectrum),
@@ -104,7 +104,7 @@ def bin_by_mask(DataCube, mask, centroid_map, weight_map=None):
     if weight_map is not None:
         wts = weight_map[y, x]
     else:
-        wts = np.ones_like(channel_shift)
+        wts = np.ones_like(shift)
     accum_spectrum = np.nansum(wts[np.newaxis, :]
                                * shifted_spectra, axis=1) / np.nansum(wts)
     shifted_spaxis = (DataCube.spectral_axis - v0)
