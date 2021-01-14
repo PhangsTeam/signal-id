@@ -1,6 +1,5 @@
 from spectral_cube import SpectralCube
 from radio_beam import Beam
-from galaxies import Galaxy
 import astropy.units as u
 import numpy as np
 from astropy.io import fits
@@ -19,7 +18,8 @@ def common_cube(filename,
                 rmsmap=None,
                 distance=None,
                 overwrite=True,
-                return_cube=False):
+                return_cube=False,
+                huge=True):
         """
         Convolves and adds noise to a data cube to arrive at 
         a target linear resolution and noise level
@@ -70,7 +70,7 @@ def common_cube(filename,
         orig_beam_area = cube.beam.sr
         target_beam = None
         if target_resolution is not None:
-            if target_resolution.is_equivalent(u.pc):
+            if target_resolution.unit.is_equivalent(u.pc):
                 if distance is None:
                     warnings.warn("A distance with units must be provided to reach a target linear resolution")
                     raise ValueError
@@ -96,17 +96,19 @@ def common_cube(filename,
             noisevals = np.random.randn(*cube.shape)
             null_beam = Beam(major=1e-7 * u.deg, minor=1e-7 * u.deg,
                              pa=0 * u.deg)
+            noisevals[~np.isfinite(cube)] = np.nan
             noisecube = SpectralCube(noisevals, cube.wcs,
-                                     mask=np.isfinite(cube),
                                      header=cube.header, beam=null_beam,
                                      meta={'BUNIT': 'K'})
-            noisecube.allow_huge_operations = True
+            noisecube = noisecube.with_mask(np.isfinite(cube))
+            noisecube.allow_huge_operations = huge
             area_ratio = (orig_beam_area / target_beam.sr).to(
                 u.dimensionless_unscaled).value
             noisecube = noisecube.convolve_to(target_beam)
 
             if (rmsname is not None) and (rmsmap is None):
-                rmsmap = fits.getdata(rmsname) * u.K
+                rmsmap = fits.getdata(os.path.join(datadir,
+                                                   rmsname)) * u.K
             if rmsmap is None:
                 warnings.warn("One of rmsmap or rmsname must be provided for noise homogenization")
                 raise FileNotFoundError
@@ -119,12 +121,14 @@ def common_cube(filename,
                 addamplitude[addamplitude < 0] = 0.0
                 addamplitude.shape = addamplitude.shape
                 noisevals = noisecube.filled_data[:]
-                noisevals /= np.std(noisevals)
+                noisevals /= np.nanstd(noisevals)
                 noisevals *= (addamplitude**0.5)
-                cube.allow_huge_operations = True
+                cube.allow_huge_operations = huge
                 cube += noisevals
         if type(outname) is str:
             cube.write(outdir + outname,
                        overwrite=overwrite)
         if return_cube:
             return(cube)
+        else:
+            return(True)
