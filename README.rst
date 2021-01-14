@@ -6,6 +6,8 @@ Signal identification and noise tools for spectral line data cubes
     :alt: Powered by Astropy Badge
 
 
+This software was developed as part of the PHANGS Imaging Pipeline.  If you make use of this software, please make a reference to Leroy et al. (2021) "PHANGS--ALMA Data Processing and Pipeline" (Reference to be included once available on arXiv).
+
 License
 -------
 
