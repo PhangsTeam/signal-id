@@ -6,6 +6,8 @@ from astropy.stats import mad_std
 from astropy.convolution import convolve, Gaussian2DKernel
 import scipy.stats as ss
 from spectral_cube import SpectralCube
+import warnings
+
 
 import astropy.wcs as wcs
 import astropy.units as u
