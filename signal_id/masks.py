@@ -52,7 +52,7 @@ def nchan_thresh_mask(cube, thresh=5., nchan=2):
                             where=(~np.isnan(cube)),
                             out=np.full(cube.shape, False, dtype=bool))
 
-    kernel = np.ones(nchan, dtype=np.bool)
+    kernel = np.ones(nchan, dtype=bool)
     kernel = kernel[:, np.newaxis, np.newaxis]
 
     mask = morph.binary_opening(mask, kernel)
@@ -172,7 +172,7 @@ def grow_mask(mask, iters_xy=0, iters_v=0, constraint=None):
 
     if iters_v > 0:
 
-        struct = np.ones(iters_v, dtype=np.bool)
+        struct = np.ones(iters_v, dtype=bool)
         struct = struct[:, np.newaxis, np.newaxis]
 
         if iters_xy > 0:
@@ -196,7 +196,7 @@ def grow_mask(mask, iters_xy=0, iters_v=0, constraint=None):
         good_regions = np.unique(regions[mask])
 
         # create a new mask that includes only these good new regions
-        mask = np.zeros_like(mask, dtype=np.bool)
+        mask = np.zeros_like(mask, dtype=bool)
         for hit in good_regions:
             mask[regions == hit] = True
 
@@ -431,10 +431,10 @@ def join_masks(orig_mask_in, new_mask_in,
         y = np.rint(y).astype(np.int)
         z = np.rint(z).astype(np.int)
         new_mask_data = np.array(
-            new_mask.filled_data[:].value > thresh, dtype=np.bool)
+            new_mask.filled_data[:].value > thresh, dtype=bool)
 
         # Create new mask
-        new_mask_vals = np.zeros(orig_mask.shape, dtype=np.bool)
+        new_mask_vals = np.zeros(orig_mask.shape, dtype=bool)
         # Find all values that are in bounds
         inbounds = reduce((lambda A, B: np.logical_and(A, B)),
                           [(z[:, np.newaxis, np.newaxis] >= 0),
@@ -456,7 +456,7 @@ def join_masks(orig_mask_in, new_mask_in,
         new_mask = new_mask.reproject(orig_mask.header, order=order)
         new_mask = new_mask.spectral_interpolate(orig_mask.spectral_axis)
         new_mask_vals = np.array(new_mask.filled_data[:].value > thresh,
-                                 dtype=np.bool)
+                                 dtype=bool)
 
     # &%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%&%
     # Combine
@@ -464,11 +464,11 @@ def join_masks(orig_mask_in, new_mask_in,
 
     if operation.strip().lower() == 'or':
         mask = np.logical_or(np.array(orig_mask.filled_data[:].value > thresh,
-                                      dtype=np.bool),
+                                      dtype=bool),
                              new_mask_vals)
     elif operation.strip().lower() == 'and':
         mask = np.logical_and(np.array(orig_mask.filled_data[:].value > thresh,
-                                       dtype=np.bool),
+                                       dtype=bool),
                               new_mask_vals)
     elif operation.strip().lower() == 'sum':
         mask = (orig_mask.filled_data[:].value) + new_mask_vals

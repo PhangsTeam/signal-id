@@ -1,0 +1,10 @@
+astropy
+spectral-cube
+radio-beam
+scipy
+
+[docs]
+sphinx-astropy
+
+[test]
+pytest-astropy

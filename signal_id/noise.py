@@ -42,7 +42,7 @@ def mad_zero_centered(data, mask=None):
     Keywords:
     ---------
     
-    mask : np.bool
+    mask : bool
 
         Boolean array with True indicating where data can be used in
         the noise estimate. (i.e., True is noise). If none is supplied
@@ -118,18 +118,18 @@ def noise_cube(datain, mask=None,
     Keywords:
     ---------
     
-    mask : np.bool
+    mask : bool
 
         Boolean array with False indicating where data can be 
         used in the noise estimate. (i.e., True is signal)
     
-    do_map : np.bool
+    do_map : bool
     
         Estimate spatial variations in the noise. Default is True. If
         set to False, all locations in a plane have the same noise
         estimate.
 
-    do_spec : np.bool
+    do_spec : bool
     
         Estimate spectral variations in the noise. Default is True. If
         set to False, all channels in a spectrum have the same noise
