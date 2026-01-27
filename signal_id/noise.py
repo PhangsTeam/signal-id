@@ -95,42 +95,49 @@ def mad_zero_centered(data, mask=None):
     return(mad2)
 
 
-def noise_cube(datain, mask=None,
-               nThresh=30, iterations=1,
-               do_map=True, do_spec=True,
-               box=None, spec_box=None,
+def noise_cube(data,
+               mask=None,
+               nThresh=30,
+               iterations=1,
+               do_map=True,
+               do_spec=True,
+               box=None,
+               spec_box=None,
+               substride=None,
                bandpass_smooth_window=None,
                bandpass_smooth_order=3,
-               oversample_boundary=False,
-               return_spectral_cube=False):
+               oversample_boundary=False, 
+               use_fft=True,
+               ):
+
     """
 
     Makes an empirical estimate of the noise in a cube assuming that
     it is normally distributed about zero. Treats the spatial and
     spectral dimensions as separable.
-    
+
     Parameters:
     -----------
-    
+
     data : np.array
         Array of data (floats)
-    
+
     Keywords:
     ---------
-    
+
     mask : bool
 
-        Boolean array with False indicating where data can be 
+        Boolean array with False indicating where data can be
         used in the noise estimate. (i.e., True is signal)
-    
+
     do_map : bool
-    
+
         Estimate spatial variations in the noise. Default is True. If
         set to False, all locations in a plane have the same noise
         estimate.
 
     do_spec : bool
-    
+
         Estimate spectral variations in the noise. Default is True. If
         set to False, all channels in a spectrum have the same noise
         estimate.
@@ -140,43 +147,47 @@ def noise_cube(datain, mask=None,
         Spatial size of the box over which noise is calculated in
         pixels.  Default: no box, every pixel gets its own noise
         estimte.
-    
+
     spec_box : int
 
         Spectral size of the box overwhich the noise is calculated.
         Default: no box, each channel gets its own noise estimate.
-    
+
+    substride : int
+
+        Spatial sub-sampling stride used when calculating noise maps.  Default:
+        no sub-sampling.
+
     nThresh : int
         Minimum number of data to be used in an individual noise estimate.
-    
+
     iterations : int
-        Number of times to iterate the noise solution to force Gaussian 
+        Number of times to iterate the noise solution to force Gaussian
         statistics.  Default: no iterations.
-    
+
     bandpass_smooth_window : int
-        Number of channels used in bandpass smoothing kernel.  Defaults to 
-        nChan / 4 where nChan number of channels.  Set to zero to suppress 
+        Number of channels used in bandpass smoothing kernel.  Defaults to
+        nChan / 4 where nChan number of channels.  Set to zero to suppress
         smoothing. Uses Savitzky-Golay smoothing
-        
+
     bandpass_smooth_order : int
         Polynomial order used in smoothing kernel.  Defaults to 3.
-    
+        
+    use_fft: bool
+        Use FFT for convolution and infilling (almost as good and much faster)
+
     """
 
-    if type(datain) is SpectralCube:
-        data = datain.filled_data[:].value
-    elif type(datain) is np.ndarray:
-        data = datain
-    else:
-        warning.warn("Input data must be ndarray or SpectralCube")
-        raise ValueError
-    
+    # TBD: add error checking
+
     # Create a mask that identifies voxels to be fitting the noise
 
     noisemask = np.isfinite(data)
     if mask is not None:
         noisemask[mask] = False
 
+    validdatamap = np.any(noisemask, axis=0)
+    pixdim = int(np.ceil(np.sum(validdatamap)**0.5))
     # Default the spatial step size to individual pixels
 
     step = 1
@@ -187,8 +198,12 @@ def noise_cube(datain, mask=None,
     # used for convenience.
 
     if box is not None:
-        step = np.floor(box/2.5).astype(np.int)
+        step = np.floor(box/2.5).astype(int)
+        step = np.min([step, pixdim // 20])
         halfbox = int(box // 2)
+
+    if substride is None:
+        substride = 1
 
     # Include all pixels adjacent to the spatial
     # boundary of the data as set by NaNs
@@ -207,7 +222,7 @@ def noise_cube(datain, mask=None,
     # calculate a spectral step size.
 
     if spec_box is not None:
-        spec_step = np.floor(spec_box / 2).astype(np.int)
+        spec_step = np.floor(spec_box / 2).astype(int)
         boxv = int(spec_box // 2)
     else:
         boxv = 0
@@ -249,17 +264,17 @@ def noise_cube(datain, mask=None,
 
             xsamps = xx[halfbox::step]
             ysamps = yy[halfbox::step]
-            xsampsf = (xsamps[np.newaxis, :]
-                       * (np.ones_like(ysamps))[:, np.newaxis]).flatten()
-            ysampsf = (ysamps[:, np.newaxis] * np.ones_like(xsamps)).flatten()
+            xsampsf = (xsamps[np.newaxis,:]
+                      * (np.ones_like(ysamps))[:,np.newaxis]).flatten()
+            ysampsf = (ysamps[:,np.newaxis] * np.ones_like(xsamps)).flatten()
 
             for x, y in zip(xsampsf, ysampsf):
                 # Extract a minicube and associated mask from the cube
 
-                minicube = data[:, (y-halfbox):(y+halfbox+1),
-                                (x-halfbox):(x+halfbox+1)]
-                minicube_mask = noisemask[:, (y-halfbox):(y+halfbox+1),
-                                          (x-halfbox):(x+halfbox+1)]
+                minicube = data[:, (y-halfbox):(y+halfbox+1):substride,
+                               (x-halfbox):(x+halfbox+1):substride]
+                minicube_mask = noisemask[:, (y-halfbox):(y+halfbox+1):substride,
+                                             (x-halfbox):(x+halfbox+1):substride]
 
                 # If we have enough data, fit a noise value for this entry
 
@@ -270,10 +285,10 @@ def noise_cube(datain, mask=None,
             if extrax is not None and extray is not None:
                 for x, y in zip(extrax, extray):
 
-                    minicube = data[:, (y-halfbox):(y+halfbox+1),
-                                    (x-halfbox):(x+halfbox+1)]
-                    minicube_mask = noisemask[:, (y-halfbox):(y+halfbox+1),
-                                              (x-halfbox):(x+halfbox+1)]
+                    minicube = data[:, (y-halfbox):(y+halfbox+1):substride,
+                                    (x-halfbox):(x+halfbox+1):substride]
+                    minicube_mask = noisemask[:, (y-halfbox):(y+halfbox+1):substride,
+                                              (x-halfbox):(x+halfbox+1):substride]
 
                     if np.sum(minicube_mask) > nThresh:
                         noise_map[y, x] = mad_zero_centered(minicube,
@@ -307,8 +322,15 @@ def noise_cube(datain, mask=None,
                 # import scipy.interpolate as interp
                 # func = interp.interp2d(x, y, noise_map[y, x], kind='cubic')
 
-                noise_map = convolve(noise_map, kernel, boundary='extend')
-
+                if use_fft:
+                    pad = int(box)
+                    noise_map_pad = np.pad(noise_map, pad, 'edge') 
+                    noise_map_pad = convolve_fft(noise_map_pad, kernel,
+                                                 nan_treatment='interpolate', 
+                                                 boundary='wrap')
+                    noise_map = noise_map_pad[pad:-pad, pad:-pad]
+                else:
+                    noise_map = convolve(noise_map, kernel, boundary='extend')
                 # yy, xx = np.indices(noise_map.shape)
                 # noise_map_beta = interp.griddata((y, x), noise_map[y,x],
                 #                                  (yy, xx), method='cubic')
@@ -330,10 +352,11 @@ def noise_cube(datain, mask=None,
         if not do_spec:
 
             # If spectral variations are turned off then assume that
-            # the noise_map describes all channels of the cube.
+            # the noise_map describes all channels of the cube. In
+            # that case the spectrum is just a series of ones.
 
-            pass
-
+            noise_spec = np.ones(data.shape[0])
+            
         else:
 
             # Loop over channels
@@ -341,7 +364,7 @@ def noise_cube(datain, mask=None,
             zz = np.arange(data.shape[0])
             for z in zz:
 
-                # Idententify the range of channels to be considered
+                # Identify the range of channels to be considered
                 # in this estimate.
 
                 lowz = np.clip(z - boxv, 0, data.shape[0])
@@ -394,9 +417,7 @@ def noise_cube(datain, mask=None,
             data = data / noise_cube
             noise_cube_out *= noise_cube
 
+
     # If iterating return the iterated noise cube.
-    if return_spectral_cube and type(datain) is SpectralCube:
-        return(SpectralCube(u.Quantity(noise_cube_out, datain.unit), 
-                            datain.wcs, header=datain.header))
-    else:
-        return(noise_cube_out)
+
+    return(noise_cube_out)
