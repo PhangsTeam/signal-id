@@ -4,7 +4,7 @@ import scipy.ndimage as nd
 from scipy.signal import savgol_coeffs
 import numpy as np
 from astropy.stats import mad_std
-from astropy.convolution import convolve, Gaussian2DKernel
+from astropy.convolution import convolve, Gaussian2DKernel, convolve_fft
 import scipy.stats as ss
 
 from spectral_cube import SpectralCube
@@ -24,7 +24,6 @@ mad_to_std_fac = 1.482602218505602
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
 
 def mad_zero_centered(data, mask=None):
     """
